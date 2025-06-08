@@ -1,92 +1,111 @@
 // js/data.js
-// Handles fetching and processing of fuel data with a resilient, multi-proxy approach.
+// Handles fetching and processing of fuel data with caching and loading indication.
 
 import { DATA_SOURCES, parseLocation, STANDARD_PETROL_CODE, ALT_STANDARD_PETROL_CODES, STANDARD_DIESEL_CODE, ALT_STANDARD_DIESEL_CODES } from './config.js';
 import { state } from './state.js';
 import { addStationToCluster, createFilterControls, updateDynamicPriceScaleAndLegend } from './map-renderer.js';
 
-// A list of public CORS proxies. The script will try them in order.
-const CORS_PROXIES = [
-    'https://api.allorigins.win/raw?url=',
-    'https://cors.eu.org/',
-];
+const CORS_PROXIES = ['https://api.allorigins.win/raw?url=', 'https://cors.eu.org/'];
+const CACHE_KEY = 'fuelDataCache';
+const CACHE_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-/**
- * A more robust fetch function that tries multiple proxies if the first one fails.
- * @param {string} url The target URL to fetch.
- * @returns {Promise<any>} A promise that resolves with the JSON data.
- */
 async function fetchWithProxyFallbacks(url) {
     for (const proxy of CORS_PROXIES) {
         const proxiedUrl = proxy + encodeURIComponent(url);
         try {
             const response = await fetch(proxiedUrl);
             if (response.ok) {
-                // Try to parse the response as JSON
                 const data = await response.json();
-                console.log(`Success with proxy ${proxy.substring(0, 20)}... for ${url}`);
-                return data; // If successful, return the data and exit the loop
+                console.log(`Success with proxy for ${url}`);
+                return data;
             }
-            // If response is not ok (e.g., 404, 500), log it and try the next proxy
-            console.warn(`Proxy ${proxy.substring(0, 20)}... failed for ${url} with status ${response.status}`);
+            console.warn(`Proxy failed for ${url} with status ${response.status}`);
         } catch (error) {
-            // If fetch fails completely (network error, or if response.json() fails), log it and try next proxy
-            console.warn(`Proxy ${proxy.substring(0, 20)}... encountered an error for ${url}:`, error.message);
+            console.warn(`Proxy encountered a network error for ${url}:`, error.message);
         }
     }
-    // If all proxies have been tried and failed, throw an error.
     throw new Error(`All proxies failed to fetch ${url}`);
 }
 
-/**
- * A helper function to introduce a delay.
- * @param {number} ms The delay in milliseconds.
- */
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// NEW: Function to process and render data, used by both fetch and cache logic
+function processAndRenderData(data, totalStations) {
+    state.allStationsData = data;
+    console.log(`Processing complete. Found ${totalStations} stations.`);
+    
+    state.allStationsData.forEach(sData => addStationToCluster(sData));
+    Object.values(state.brandMarkerClusters).forEach(clusterGroup => state.map.addLayer(clusterGroup));
+    
+    updateDynamicPriceScaleAndLegend();
+    createFilterControls();
+}
 
 export async function fetchAndProcessData() {
     if (!state.map) { console.error("Map object is not available!"); return; }
-    console.log("Fetching fuel price data...");
+    
+    const loadingOverlay = document.getElementById('loading-overlay');
+
+    // Check for cached data first
+    const cachedData = localStorage.getItem(CACHE_KEY);
+    if (cachedData) {
+        const { timestamp, data, totalStations } = JSON.parse(cachedData);
+        if (Date.now() - timestamp < CACHE_DURATION_MS) {
+            console.log("Loading data from cache.");
+            processAndRenderData(data, totalStations);
+            return; // Exit if cache is valid
+        } else {
+            console.log("Cache is stale, fetching new data.");
+        }
+    }
+
+    // If no valid cache, show the loading indicator and fetch new data
+    loadingOverlay.classList.add('visible');
+    console.log("Fetching latest fuel prices...");
+
     state.allStationsData.length = 0;
     Object.keys(state.brandMarkerClusters).forEach(brandName => {
         if (state.brandMarkerClusters[brandName]) state.map.removeLayer(state.brandMarkerClusters[brandName]);
         delete state.brandMarkerClusters[brandName];
     });
 
+    let freshData = [];
     let totalStationsAddedToMap = 0;
 
-    // Fetch data sequentially with a delay to be polite to the APIs and proxies
     for (const source of DATA_SOURCES) {
         try {
-            // Use the new resilient fetch function
             const data = await fetchWithProxyFallbacks(source.url);
-            
             const lastUpdated = data.last_updated;
-
             if (data && data.stations && Array.isArray(data.stations)) {
                 data.stations.forEach(station => {
                     const loc = source.locationParser ? source.locationParser(station.location) : parseLocation(station.location);
                     if (loc && !isNaN(loc.latitude) && !isNaN(loc.longitude) && (loc.latitude !== 0 || loc.longitude !== 0)) {
-                        state.allStationsData.push({ ...station, sourceName: source.name, lat: loc.latitude, lon: loc.longitude, lastUpdated });
+                        freshData.push({ ...station, sourceName: source.name, lat: loc.latitude, lon: loc.longitude, lastUpdated });
                         totalStationsAddedToMap++;
                     }
                 });
             }
             console.log(`Successfully processed data for ${source.name}.`);
         } catch (error) {
-            // This logs only if ALL proxies failed for a given source
             console.error(`Gave up on ${source.name} after trying all proxies. Error:`, error.message);
         }
-
-        // Add a small delay between each request to avoid rate-limiting
-        await delay(250);
+        // MODIFIED: Reduced delay
+        await delay(25); 
     }
     
-    console.log(`Processing complete. Found ${totalStationsAddedToMap} stations.`);
-    state.allStationsData.forEach(sData => addStationToCluster(sData));
-    Object.values(state.brandMarkerClusters).forEach(clusterGroup => state.map.addLayer(clusterGroup));
-    updateDynamicPriceScaleAndLegend();
-    createFilterControls();
+    // NEW: Save the newly fetched data to the cache
+    const cachePayload = {
+        timestamp: Date.now(),
+        data: freshData,
+        totalStations: totalStationsAddedToMap,
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
+    
+    // Process and render the fresh data
+    processAndRenderData(freshData, totalStationsAddedToMap);
+    
+    // Hide the loading indicator
+    loadingOverlay.classList.remove('visible');
 }
 
 export function getStationPrice(station, fuelCode) {
