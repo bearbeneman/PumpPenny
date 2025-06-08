@@ -15,37 +15,30 @@ export async function fetchAndProcessData() {
     });
 
     let totalStationsAddedToMap = 0;
-    
-    // NEW: Define the CORS proxy
     const corsProxy = 'https://api.allorigins.win/raw?url=';
 
-    const fetchPromises = DATA_SOURCES.map(source => {
-        // MODIFIED: Prepend the proxy to the source URL
-        const proxiedUrl = corsProxy + encodeURIComponent(source.url);
-        
-        return fetch(proxiedUrl, { cache: "no-store" })
-            .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); })
-            .then(data => ({ name: source.name, data, sourceConfig: source }))
-            .catch(error => {
-                console.error(`Failed to fetch data for ${source.name}:`, error);
-                return { name: source.name, error };
-            })
-    });
+    // MODIFIED: Fetch data sequentially to avoid rate-limiting
+    for (const source of DATA_SOURCES) {
+        try {
+            const proxiedUrl = corsProxy + encodeURIComponent(source.url);
+            const response = await fetch(proxiedUrl, { cache: "no-store" });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
+            const lastUpdated = data.last_updated;
 
-    for (const promise of fetchPromises) {
-        const result = await promise;
-        if (result.error) continue;
-        const { name, data, sourceConfig } = result;
-        const lastUpdated = data.last_updated;
-
-        if (data && data.stations && Array.isArray(data.stations)) {
-            data.stations.forEach(station => {
-                const loc = sourceConfig.locationParser ? sourceConfig.locationParser(station.location) : parseLocation(station.location);
-                if (loc && !isNaN(loc.latitude) && !isNaN(loc.longitude) && (loc.latitude !== 0 || loc.longitude !== 0)) {
-                    state.allStationsData.push({ ...station, sourceName: name, lat: loc.latitude, lon: loc.longitude, lastUpdated });
-                    totalStationsAddedToMap++;
-                }
-            });
+            if (data && data.stations && Array.isArray(data.stations)) {
+                data.stations.forEach(station => {
+                    const loc = source.locationParser ? source.locationParser(station.location) : parseLocation(station.location);
+                    if (loc && !isNaN(loc.latitude) && !isNaN(loc.longitude) && (loc.latitude !== 0 || loc.longitude !== 0)) {
+                        state.allStationsData.push({ ...station, sourceName: source.name, lat: loc.latitude, lon: loc.longitude, lastUpdated });
+                        totalStationsAddedToMap++;
+                    }
+                });
+            }
+            console.log(`Successfully fetched data for ${source.name}.`);
+        } catch (error) {
+            console.error(`Failed to fetch data for ${source.name}:`, error);
         }
     }
     
