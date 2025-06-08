@@ -1,5 +1,5 @@
 // js/data.js
-// Handles fetching and processing of fuel data with caching and loading indication.
+// Handles fetching and processing of fuel data with caching and dynamic loading indication.
 
 import { DATA_SOURCES, parseLocation, STANDARD_PETROL_CODE, ALT_STANDARD_PETROL_CODES, STANDARD_DIESEL_CODE, ALT_STANDARD_DIESEL_CODES } from './config.js';
 import { state } from './state.js';
@@ -7,7 +7,7 @@ import { addStationToCluster, createFilterControls, updateDynamicPriceScaleAndLe
 
 const CORS_PROXIES = ['https://api.allorigins.win/raw?url=', 'https://cors.eu.org/'];
 const CACHE_KEY = 'fuelDataCache';
-const CACHE_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
+const CACHE_DURATION_MS = 12 * 60 * 60 * 1000;
 
 async function fetchWithProxyFallbacks(url) {
     for (const proxy of CORS_PROXIES) {
@@ -29,7 +29,6 @@ async function fetchWithProxyFallbacks(url) {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// NEW: Function to process and render data, used by both fetch and cache logic
 function processAndRenderData(data, totalStations) {
     state.allStationsData = data;
     console.log(`Processing complete. Found ${totalStations} stations.`);
@@ -44,24 +43,24 @@ function processAndRenderData(data, totalStations) {
 export async function fetchAndProcessData() {
     if (!state.map) { console.error("Map object is not available!"); return; }
     
+    // MODIFIED: Get a reference to the new detail element
     const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingDetail = document.getElementById('loading-detail');
 
-    // Check for cached data first
     const cachedData = localStorage.getItem(CACHE_KEY);
     if (cachedData) {
         const { timestamp, data, totalStations } = JSON.parse(cachedData);
         if (Date.now() - timestamp < CACHE_DURATION_MS) {
             console.log("Loading data from cache.");
             processAndRenderData(data, totalStations);
-            return; // Exit if cache is valid
+            return;
         } else {
             console.log("Cache is stale, fetching new data.");
         }
     }
 
-    // If no valid cache, show the loading indicator and fetch new data
     loadingOverlay.classList.add('visible');
-    console.log("Fetching latest fuel prices...");
+    loadingDetail.textContent = 'Initializing...'; // Set an initial message
 
     state.allStationsData.length = 0;
     Object.keys(state.brandMarkerClusters).forEach(brandName => {
@@ -73,6 +72,9 @@ export async function fetchAndProcessData() {
     let totalStationsAddedToMap = 0;
 
     for (const source of DATA_SOURCES) {
+        // MODIFIED: Update the detail text before each fetch
+        loadingDetail.textContent = `Fetching ${source.name}...`;
+
         try {
             const data = await fetchWithProxyFallbacks(source.url);
             const lastUpdated = data.last_updated;
@@ -87,13 +89,14 @@ export async function fetchAndProcessData() {
             }
             console.log(`Successfully processed data for ${source.name}.`);
         } catch (error) {
+            loadingDetail.textContent = `Failed to fetch ${source.name}, trying next...`;
             console.error(`Gave up on ${source.name} after trying all proxies. Error:`, error.message);
         }
-        // MODIFIED: Reduced delay
         await delay(25); 
     }
     
-    // NEW: Save the newly fetched data to the cache
+    loadingDetail.textContent = 'Rendering map...';
+
     const cachePayload = {
         timestamp: Date.now(),
         data: freshData,
@@ -101,14 +104,13 @@ export async function fetchAndProcessData() {
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
     
-    // Process and render the fresh data
     processAndRenderData(freshData, totalStationsAddedToMap);
     
-    // Hide the loading indicator
     loadingOverlay.classList.remove('visible');
 }
 
 export function getStationPrice(station, fuelCode) {
+    // ... (This function is unchanged)
      if (station.prices) {
         const altCodes = fuelCode === STANDARD_PETROL_CODE ? ALT_STANDARD_PETROL_CODES :
                          fuelCode === STANDARD_DIESEL_CODE ? ALT_STANDARD_DIESEL_CODES : [];
