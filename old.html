@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>UK Fuel Prices Map</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; font-family: Arial, sans-serif; overflow: hidden; display: flex; flex-direction: column; }
+        #app-header { background-color: #f0f0f0; border-bottom: 1px solid #ccc; padding: 8px 12px; font-size: 0.9em; text-align: center; flex-shrink: 0; }
+        #last-updated { font-weight: bold; display: block; margin-top: 4px; }
+        #filter-controls { padding: 8px 12px; background-color: #f8f8f8; border-bottom: 1px solid #ddd; flex-shrink: 0; text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+        #filter-controls > span:first-child { width: 100%; margin-bottom: 5px; text-align: center; }
+        #filter-controls label { font-size: 0.9em; cursor: pointer; display: inline-flex; align-items: center; }
+        #filter-controls input[type="checkbox"] { margin-right: 5px; vertical-align: middle; }
+        #map-container { flex-grow: 1; display: flex; position: relative; }
+        #map { width: 100%; height: 100%; background-color: #e0e0e0; }
+
+        .leaflet-popup-content-wrapper { border-radius: 5px; }
+        .leaflet-popup-content { margin: 10px; font-size: 0.95em; line-height: 1.4; max-height: 200px; overflow-y: auto; }
+        .leaflet-popup-content strong { display: block; margin-bottom: 5px; font-size: 1.1em; color: #333; }
+        .leaflet-popup-content .fuel-price { margin-bottom: 3px; }
+        .leaflet-popup-content .fuel-price .fuel-name { font-weight: 500; }
+        .leaflet-popup-content .brand-name { font-style: italic; color: #555; }
+
+        .cheapest-petrol-icon .icon-flag, 
+        .cheapest-diesel-icon .icon-flag {
+            position: absolute; top: -10px; left: 15px; width: 18px; height: 18px; border-radius: 50%;
+            text-align: center; line-height: 18px; font-weight: bold; color: white; font-size: 10px;
+            border: 1px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); z-index: 1001; 
+        }
+        .cheapest-petrol-icon .icon-flag { background-color: #4CAF50; }
+        .cheapest-diesel-icon .icon-flag { background-color: #FFC107; }
+        .cheapest-both-icon .icon-flag-petrol {
+            position: absolute; top: -12px; left: 13px; width: 15px; height: 15px; border-radius: 50%;
+            text-align: center; line-height: 15px; font-weight: bold; color: white; font-size: 9px;
+            border: 1px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); background-color: #4CAF50;
+            z-index: 1002;
+        }
+         .cheapest-both-icon .icon-flag-diesel {
+            position: absolute; top: -12px; left: 0px; width: 15px; height: 15px; border-radius: 50%;
+            text-align: center; line-height: 15px; font-weight: bold; color: white; font-size: 9px;
+            border: 1px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5); background-color: #FFC107;
+            z-index: 1001;
+        }
+        .price-colored-icon > div:first-child { box-shadow: 1px 1px 2px rgba(0,0,0,0.5); }
+        .price-colored-icon .icon-flag-petrol, .price-colored-icon .icon-flag-diesel,
+        .price-colored-icon .icon-flag {
+            position: absolute; width: 10px; height: 10px; line-height: 10px; font-size: 7px;
+            border-radius: 50%; text-align: center; font-weight: bold; color: white;
+            border: 1px solid rgba(0,0,0,0.3); box-shadow: 0 0 2px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        .price-colored-icon .icon-flag-petrol { background-color: #4CAF50; top: -5px; right: -5px; }
+        .price-colored-icon .icon-flag-diesel { background-color: #FFC107; top: -5px; left: -5px; }
+        .price-colored-icon .icon-flag { top: -5px; left: 50%; transform: translateX(-50%); }
+
+        .legend {
+            padding: 6px 8px; font: 12px/1.5 Arial, Helvetica, sans-serif;
+            background: white; background: rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px;
+            line-height: 18px; color: #555; max-height: 150px; overflow-y: auto;
+        }
+        .legend h4 { margin: 0 0 5px; color: #333; text-align: center; }
+        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.9; border-radius: 3px; border: 1px solid #777;}
+        .legend .flag-icon {
+            width: 15px; height: 15px; border-radius: 50%; display: inline-block;
+            text-align: center; line-height: 15px; font-weight: bold; color: white; font-size: 9px;
+            border: 1px solid #ccc; margin-right: 5px; vertical-align: middle;
+        }
+        .legend .flag-petrol { background-color: #4CAF50; }
+        .legend .flag-diesel { background-color: #FFC107; }
+
+        #price-color-options { margin-top: 10px; padding: 8px 12px; background-color: #f8f8f8; border-bottom: 1px solid #ddd; text-align: center; flex-shrink: 0;}
+        #price-color-options label { margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <div id="app-header">
+        <span id="loading-status">Loading fuel price data...</span>
+        <span id="last-updated"></span>
+    </div>
+    <div id="filter-controls">
+        <span>Filter by brand: </span>
+    </div>
+    <div id="price-color-options">
+        <label for="fuel-type-color">Color markers by price of:</label>
+        <select id="fuel-type-color">
+            <option value="none">None</option>
+            <option value="E10">Unleaded (E10)</option>
+            <option value="E5">Premium Unleaded (E5)</option>
+            <option value="B7">Diesel (B7)</option>
+            <option value="SDV">Super Diesel</option>
+        </select>
+    </div>
+    <div id="map-container"> <div id="map"></div> </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+    <script>
+        // --- Configuration ---
+        const parseLonLatLocation = (location) => {
+            if (location && typeof location.longitude === 'number' && typeof location.latitude === 'number') {
+                return { latitude: location.latitude, longitude: location.longitude };
+            }
+            if (location && typeof location.longitude === 'string' && typeof location.latitude === 'string') {
+                return { latitude: parseFloat(location.latitude), longitude: parseFloat(location.longitude) };
+            }
+            return null;
+        };
+
+        const FUEL_TYPE_DESCRIPTIONS = {
+            "E5": "Premium Unleaded (E5)", "E10": "Unleaded (E10)", "B7": "Diesel (B7)",
+            "SDV": "Super Diesel", "UNL": "Unleaded", "DSL": "Diesel", "PUL": "Premium Unleaded",
+            "SUL": "Super Unleaded", "PDL": "Premium Diesel",
+        };
+
+        const STANDARD_PETROL_CODE = "E10", ALT_STANDARD_PETROL_CODES = ["UNL"];
+        const STANDARD_DIESEL_CODE = "B7", ALT_STANDARD_DIESEL_CODES = ["DSL"];
+
+        const DATA_SOURCES = [
+            { name: "Shell", url: "https://www.shell.co.uk/fuel-prices-data.html" },
+            { name: "AppleGreen", url: "https://applegreenstores.com/fuel-prices/data.json" },
+            { name: "AsconaGroup", url: "https://fuelprices.asconagroup.co.uk/newfuel.json" },
+            { name: "Asda", url: "https://storelocator.asda.com/fuel_prices_data.json" },
+            { name: "BP", url: "https://www.bp.com/en_gb/united-kingdom/home/fuelprices/fuel_prices_data.json" },
+            { name: "Esso", url: "https://fuelprices.esso.co.uk/latestdata.json" },
+            { name: "JET", url: "https://jetlocal.co.uk/fuel_prices_data.json" },
+            { name: "Morrisons", url: "https://www.morrisons.com/fuel-prices/fuel.json", locationParser: parseLonLatLocation },
+            { name: "MotoWay", url: "https://moto-way.com/fuel-price/fuel_prices.json" },
+            { name: "MotorFuelGroup", url: "https://fuel.motorfuelgroup.com/fuel_prices_data.json" },
+            { name: "Rontec", url: "https://www.rontec-servicestations.co.uk/fuel-prices/data/fuel_prices_data.json", locationParser: parseLonLatLocation },
+            { name: "Sainsbury's", url: "https://api.sainsburys.co.uk/v1/exports/latest/fuel_prices_data.json" },
+            { name: "SGN Retail", url: "https://www.sgnretail.uk/files/data/SGN_daily_fuel_prices.json", locationParser: parseLonLatLocation },
+            { name: "Tesco", url: "https://www.tesco.com/fuel_prices/fuel_prices_data.json" }
+        ];
+        const UK_CENTER = [54.5, -2.5], INITIAL_UK_ZOOM = 6, MAX_ZOOM = 18;
+        const DISABLE_CLUSTERING_ZOOM = 10; 
+        const NUM_PRICE_BINS = 5;
+        const PRICE_BIN_COLORS = ['#2ECC40', '#7FDBFF', '#FFDC00', '#FFA500', '#FF4136'];
+
+        // --- DOM Elements & Global Vars ---
+        const mapElement = document.getElementById('map'), loadingStatusElement = document.getElementById('loading-status'),
+              lastUpdatedElement = document.getElementById('last-updated'), filterControlsElement = document.getElementById('filter-controls'),
+              fuelTypeColorSelect = document.getElementById('fuel-type-color');
+        let map, allStationsData = [], cheapestPetrolStation = null, cheapestDieselStation = null,
+            cheapestPetrolPrice = Infinity, cheapestDieselPrice = Infinity, priceLegend = null, cheapestFlagLegend = null,
+            currentPriceScale = [];
+        const brandMarkerClusters = {}, allBrandNames = new Set();
+
+        // --- Marker Icons ---
+        function createFlagIcon(isCheapestPetrol, isCheapestDiesel, color = null) {
+            let htmlContent = '';
+            let iconOptions = {
+                iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], className: 'leaflet-div-icon'
+            };
+
+            if (color) {
+                htmlContent = `<div style="background-color:${color}; width:14px; height:14px; border-radius:50%; border: 1px solid #333;"></div>`;
+                iconOptions.iconSize = [14, 14]; iconOptions.iconAnchor = [7, 7]; iconOptions.className += ' price-colored-icon';
+                // No shadow for small colored circles by default
+                if (isCheapestPetrol && isCheapestDiesel) htmlContent += `<div class="icon-flag-diesel" title="Cheapest Diesel">D</div><div class="icon-flag-petrol" title="Cheapest Petrol">P</div>`;
+                else if (isCheapestPetrol) htmlContent += `<div class="icon-flag" style="background-color: #4CAF50;" title="Cheapest Petrol">P</div>`;
+                else if (isCheapestDiesel) htmlContent += `<div class="icon-flag" style="background-color: #FFC107;" title="Cheapest Diesel">D</div>`;
+            } else {
+                htmlContent = `<img src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png" style="width: ${iconOptions.iconSize[0]}px; height: ${iconOptions.iconSize[1]}px;" />`;
+                iconOptions.shadowUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
+                iconOptions.shadowSize = [41, 41]; iconOptions.shadowAnchor = [12, 41];
+                if (isCheapestPetrol && isCheapestDiesel) {
+                    htmlContent += `<div class="icon-flag-diesel" title="Cheapest Diesel">D</div><div class="icon-flag-petrol" title="Cheapest Petrol">P</div>`;
+                    iconOptions.className += ' cheapest-both-icon';
+                } else if (isCheapestPetrol) {
+                    htmlContent += `<div class="icon-flag" style="background-color: #4CAF50;" title="Cheapest Petrol">P</div>`;
+                    iconOptions.className += ' cheapest-petrol-icon';
+                } else if (isCheapestDiesel) {
+                    htmlContent += `<div class="icon-flag" style="background-color: #FFC107;" title="Cheapest Diesel">D</div>`;
+                    iconOptions.className += ' cheapest-diesel-icon';
+                }
+            }
+            return L.divIcon({ html: htmlContent, ...iconOptions });
+        }
+
+        // --- Initialize Map ---
+        function initializeMap(center, zoom) {
+            console.log("initializeMap: Starting...");
+            try {
+                map = L.map('map').setView(center, zoom);
+                console.log("initializeMap: Map object created.");
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: MAX_ZOOM }).addTo(map);
+                console.log("initializeMap: Tile layer added.");
+                
+                map.on('moveend', () => { /*console.log("Map moveend event");*/ updateDynamicPriceScaleAndLegend(); });
+                map.on('zoomend', () => { /*console.log("Map zoomend event");*/ updateDynamicPriceScaleAndLegend(); }); // Keep for clarity, though moveend often covers zoom
+                console.log("initializeMap: Map event listeners attached.");
+
+                if (navigator.geolocation) {
+                    loadingStatusElement.textContent = "Getting your location...";
+                    console.log("initializeMap: Attempting geolocation.");
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            console.log("initializeMap: Geolocation success.", position);
+                            const userLat = position.coords.latitude, userLng = position.coords.longitude;
+                            const radiusMiles = 50, radiusDegrees = radiusMiles / 69.0;
+                            const southWest = L.latLng(userLat - radiusDegrees, userLng - radiusDegrees * 1.5);
+                            const northEast = L.latLng(userLat + radiusDegrees, userLng + radiusDegrees * 1.5);
+                            map.fitBounds(L.latLngBounds(southWest, northEast));
+                            console.log("initializeMap: Map bounds set by geolocation.");
+                            fetchAndProcessData();
+                        },
+                        (error) => {
+                            console.warn("initializeMap: Geolocation error:", error.message, "Code:", error.code);
+                            loadingStatusElement.textContent = "Could not get location. Showing UK. Loading data...";
+                            map.setView(UK_CENTER, INITIAL_UK_ZOOM); fetchAndProcessData();
+                        }, { timeout: 10000, enableHighAccuracy: false }
+                    );
+                } else { 
+                    console.warn("initializeMap: Geolocation is not supported.");
+                    loadingStatusElement.textContent = "Geolocation not supported. Showing UK. Loading data...";
+                    map.setView(UK_CENTER, INITIAL_UK_ZOOM); fetchAndProcessData(); 
+                }
+            } catch (error) { 
+                console.error("initializeMap: Critical error during map initialization:", error);
+                if (mapElement) mapElement.innerHTML = "Error initializing map. Check console.";
+                if (loadingStatusElement) loadingStatusElement.textContent = "Map failed to initialize.";
+            }
+        }
+        
+        function getStationPrice(station, fuelCode, altFuelCodes = []) {
+             if (station.prices) {
+                const primaryPrice = station.prices[fuelCode.toUpperCase().trim()];
+                if (primaryPrice !== undefined && primaryPrice !== null) {
+                    return parseFloat(primaryPrice);
+                }
+                for (const altCode of altFuelCodes) {
+                    const altPrice = station.prices[altCode.toUpperCase().trim()];
+                    if (altPrice !== undefined && altPrice !== null) {
+                        return parseFloat(altPrice);
+                    }
+                }
+            }
+            return null;
+        }
+
+        async function fetchAndProcessData() {
+            console.log("fetchAndProcessData: Starting...");
+            if (!map) { console.error("fetchAndProcessData: Map object is not available!"); loadingStatusElement.textContent = "Map failed to initialize. Cannot load data."; return; }
+            if (typeof map.getCenter === 'undefined' || !map.getCenter()) { console.warn("fetchAndProcessData: Map center not set, defaulting to UK_CENTER."); map.setView(UK_CENTER, INITIAL_UK_ZOOM); }
+            loadingStatusElement.textContent = "Fetching fuel price data...";
+
+            allStationsData = []; cheapestPetrolStation = null; cheapestDieselStation = null;
+            cheapestPetrolPrice = Infinity; cheapestDieselPrice = Infinity;
+            // Clear existing markers from clusters AND reset the cluster group objects
+            Object.keys(brandMarkerClusters).forEach(brandName => {
+                if (map.hasLayer(brandMarkerClusters[brandName])) {
+                    map.removeLayer(brandMarkerClusters[brandName]);
+                }
+                delete brandMarkerClusters[brandName]; // Remove reference
+            });
+            console.log("fetchAndProcessData: Cleared existing marker clusters and removed from map.");
+
+            let totalStationsProcessed = 0, totalStationsAddedToMap = 0, latestUpdateTimestamp = null, sourcesProcessedCount = 0;
+            let anySourceLoadSuccess = false, accumulatedErrorMessages = "";
+
+            const fetchPromises = DATA_SOURCES.map(source => {
+                // console.log(`fetchAndProcessData: Preparing fetch for ${source.name}`); // Already logged by console in previous response
+                return fetch(source.url, { cache: "no-store" })
+                    .then(response => {
+                        // console.log(`fetchAndProcessData: Response received for ${source.name}, status: ${response.status}`);
+                        if (!response.ok) {
+                            return response.text().then(text => {
+                                // console.error(`fetchAndProcessData: HTTP error for ${source.name}. Status: ${response.status}. Body: ${text.substring(0,200)}`);
+                                throw new Error(`HTTP ${response.status} for ${source.name}.`);
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then(data => { /*console.log(`fetchAndProcessData: JSON parsed for ${source.name}`);*/ return { name: source.name, data, sourceConfig: source }; })
+                    .catch(error => { /*console.error(`fetchAndProcessData: Fetch/JSON error for ${source.name}:`, error);*/ return { name: source.name, url: source.url, error, sourceConfig: source }; });
+            });
+            // console.log("fetchAndProcessData: All fetch promises created.");
+
+            for (const promise of fetchPromises) {
+                let sourceNameForError = "Unknown Source", sourceUrlForError = "", currentSourceConfig = {};
+                try {
+                    const result = await promise;
+                    sourceNameForError = result.name || sourceNameForError; sourceUrlForError = result.url || ""; 
+                    currentSourceConfig = result.sourceConfig || {}; sourcesProcessedCount++;
+                    // console.log(`fetchAndProcessData: Processing result for ${sourceNameForError}`);
+                    if (result.error) { accumulatedErrorMessages += `Error ${sourceNameForError}. `; continue; }
+                    anySourceLoadSuccess = true; const { name, data } = result;
+                    if (data && data.last_updated) {
+                        const ts = parseUkDate(data.last_updated);
+                        if (ts && (!latestUpdateTimestamp || ts > latestUpdateTimestamp)) { latestUpdateTimestamp = ts; lastUpdatedElement.textContent = `Prices as of: ${data.last_updated}`; }
+                    }
+                    if (data && data.stations && Array.isArray(data.stations)) {
+                        // console.log(`fetchAndProcessData: Processing ${data.stations.length} stations for ${name}`);
+                        data.stations.forEach(station => { 
+                            totalStationsProcessed++; let loc;
+                            if (currentSourceConfig.locationParser) loc = currentSourceConfig.locationParser(station.location);
+                            else {
+                                if (station.location && typeof station.location.latitude === 'number' && typeof station.location.longitude === 'number') loc = { latitude: station.location.latitude, longitude: station.location.longitude };
+                                else if (station.location && typeof station.location.latitude === 'string' && typeof station.location.longitude === 'string') loc = { latitude: parseFloat(station.location.latitude), longitude: parseFloat(station.location.longitude) };
+                            }
+                            if (loc && !isNaN(loc.latitude) && !isNaN(loc.longitude) && (loc.latitude !== 0 || loc.longitude !== 0)) {
+                                const stationData = { ...station, sourceName: name, lat: loc.latitude, lon: loc.longitude };
+                                allStationsData.push(stationData); // Collect all valid stations
+
+                                // Determine global cheapest
+                                const petrolPrice = getStationPrice(station, STANDARD_PETROL_CODE, ALT_STANDARD_PETROL_CODES);
+                                if (petrolPrice !== null && petrolPrice < cheapestPetrolPrice) { cheapestPetrolPrice = petrolPrice; cheapestPetrolStation = stationData; }
+                                const dieselPrice = getStationPrice(station, STANDARD_DIESEL_CODE, ALT_STANDARD_DIESEL_CODES);
+                                if (dieselPrice !== null && dieselPrice < cheapestDieselPrice) { cheapestDieselPrice = dieselPrice; cheapestDieselStation = stationData; }
+                                totalStationsAddedToMap++;
+                            }
+                        });
+                    } else { /*console.warn(`fetchAndProcessData: No valid stations array for ${name}`);*/ accumulatedErrorMessages += `No stations from ${name}. `; }
+                } catch (e) { /*console.error(`fetchAndProcessData: Error inside processing loop for ${sourceNameForError}:`, e);*/ accumulatedErrorMessages += `Error processing ${sourceNameForError}. `; }
+            }
+            console.log("fetchAndProcessData: Finished processing all sources. Total stations collected:", allStationsData.length);
+            
+            // Now iterate allStationsData to create markers and add to clusters
+            allStationsData.forEach(sData => {
+                const isCheapestP = cheapestPetrolStation && sData.site_id === cheapestPetrolStation.site_id && sData.sourceName === cheapestPetrolStation.sourceName;
+                const isCheapestD = cheapestDieselStation && sData.site_id === cheapestDieselStation.site_id && sData.sourceName === cheapestDieselStation.sourceName;
+                // Initially add with null color; updateDynamicPriceScaleAndLegend will color them
+                addStationToCluster(sData, sData.sourceName, sData.lat, sData.lon, isCheapestP, isCheapestD, null); 
+            });
+            console.log("fetchAndProcessData: All stations prepared for clusters.");
+
+            // Add all brand cluster groups to the map
+            Object.values(brandMarkerClusters).forEach(clusterGroup => { 
+                if (map && !map.hasLayer(clusterGroup)) { // Ensure map exists
+                    map.addLayer(clusterGroup); 
+                }
+            });
+            console.log("fetchAndProcessData: Marker clusters added/updated on map.");
+            
+            updateDynamicPriceScaleAndLegend(); 
+            createFilterControls(); 
+            updateCheapestFlagLegend();
+            console.log("fetchAndProcessData: UI update functions called.");
+
+            if (loadingStatusElement.textContent.startsWith("Fetching") || loadingStatusElement.textContent.startsWith("Getting")) loadingStatusElement.textContent = "";
+            if (totalStationsAddedToMap > 0) loadingStatusElement.textContent = `Showing ${totalStationsAddedToMap} stations. ${accumulatedErrorMessages}`;
+            else if (anySourceLoadSuccess) loadingStatusElement.textContent = `No valid station locations. ${accumulatedErrorMessages}`;
+            else loadingStatusElement.textContent = `Failed to load fuel data. ${accumulatedErrorMessages}`;
+            loadingStatusElement.textContent = loadingStatusElement.textContent.trim();
+            console.log("fetchAndProcessData: Final status update - ", loadingStatusElement.textContent);
+        }
+
+        function addStationToCluster(stationData, sourceName, latitude, longitude, isCheapestP, isCheapestD, iconColor) {
+            let brand = "Unknown Brand"; 
+            if (stationData.brand && typeof stationData.brand === 'string' && stationData.brand.trim() !== "") brand = stationData.brand.trim();
+            else if (sourceName && typeof sourceName === 'string' && sourceName.trim() !== "") brand = sourceName.trim();
+            brand = (brand.toLowerCase() === "unknown" || brand === "") ? "Unknown Brand" : brand;
+            allBrandNames.add(brand);
+
+            let pricesHtml = "No price data available.";
+            if (stationData.prices && Object.keys(stationData.prices).length > 0) {
+                pricesHtml = Object.entries(stationData.prices).map(([fuelTypeCode, price]) => {
+                    const fuelName = FUEL_TYPE_DESCRIPTIONS[fuelTypeCode.toUpperCase().trim()] || fuelTypeCode.trim();
+                    if (price === null) return `<div class="fuel-price"><span class="fuel-name">${fuelName}</span>: N/A</div>`;
+                    const priceValue = parseFloat(price);
+                    const formattedPrice = isNaN(priceValue) ? 'N/A' : (priceValue < 10 ? '£'+priceValue.toFixed(2) : priceValue.toFixed(1)+'p');
+                    return `<div class="fuel-price"><span class="fuel-name">${fuelName}</span>: ${formattedPrice}</div>`;
+                }).join('');
+            }
+            const popupContent = `<strong>${stationData.address || "N/A"}</strong><div class="brand-name">${brand} - ${stationData.postcode || "N/A"}</div><hr>${pricesHtml}`;
+            
+            const markerIcon = createFlagIcon(isCheapestP, isCheapestD, iconColor);
+            const marker = L.marker([latitude, longitude], { icon: markerIcon });
+            marker.bindPopup(popupContent);
+            marker.stationData = stationData; 
+
+            if (!brandMarkerClusters[brand]) {
+                brandMarkerClusters[brand] = L.markerClusterGroup({
+                    chunkedLoading: true, 
+                    maxClusterRadius: 60,
+                    disableClusteringAtZoom: DISABLE_CLUSTERING_ZOOM 
+                });
+            }
+            brandMarkerClusters[brand].addLayer(marker);
+        }
+
+        function updateDynamicPriceScaleAndLegend() {
+            if (!map || allStationsData.length === 0) return;
+            const selectedFuelForColor = fuelTypeColorSelect.value;
+            currentPriceScale = []; 
+
+            if (selectedFuelForColor === 'none') {
+                updateMarkersUI(null); 
+                if (priceLegend) { map.removeControl(priceLegend); priceLegend = null; }
+                return;
+            }
+
+            const mapBounds = map.getBounds();
+            const visiblePrices = [];
+            
+            Object.values(brandMarkerClusters).forEach(clusterGroup => {
+                if (map.hasLayer(clusterGroup)) {
+                    clusterGroup.eachLayer(marker => { 
+                        const stationData = marker.stationData;
+                        // Check if individual marker (if not clustered) or its cluster is in bounds.
+                        // For simplicity here, we'll just check the marker's own latLng.
+                        // More advanced: `clusterGroup.getVisibleParent(marker)` to see if its cluster is visible.
+                        if (stationData && mapBounds.contains(L.latLng(stationData.lat, stationData.lon))) {
+                             const price = getStationPrice(stationData, selectedFuelForColor,
+                                selectedFuelForColor === STANDARD_PETROL_CODE ? ALT_STANDARD_PETROL_CODES :
+                                (selectedFuelForColor === STANDARD_DIESEL_CODE ? ALT_STANDARD_DIESEL_CODES : [])
+                            );
+                            if (price !== null && !isNaN(price)) {
+                                visiblePrices.push(price);
+                            }
+                        }
+                    });
+                }
+            });
+            
+            if (visiblePrices.length === 0) { 
+                updateMarkersUI(null);
+                if (priceLegend) { map.removeControl(priceLegend); priceLegend = null; }
+                return;
+            }
+            
+            if (visiblePrices.length === 1) { 
+                 currentPriceScale = [{limit: visiblePrices[0], color: PRICE_BIN_COLORS[Math.floor(NUM_PRICE_BINS / 2)] }];
+            } else {
+                const minPrice = Math.min(...visiblePrices);
+                const maxPrice = Math.max(...visiblePrices);
+                
+                if (minPrice === maxPrice) {
+                    currentPriceScale = [{limit: minPrice, color: PRICE_BIN_COLORS[Math.floor(NUM_PRICE_BINS / 2)] }];
+                } else {
+                    const range = maxPrice - minPrice;
+                    const binSize = Math.max(0.1, range / NUM_PRICE_BINS);
+                    for (let i = 0; i < NUM_PRICE_BINS; i++) {
+                        currentPriceScale.push({
+                            limit: parseFloat((minPrice + (binSize * (i + 1))).toFixed(1)),
+                            color: PRICE_BIN_COLORS[i] || PRICE_BIN_COLORS[PRICE_BIN_COLORS.length -1]
+                        });
+                    }
+                    if(currentPriceScale.length > 0) currentPriceScale[currentPriceScale.length-1].limit = maxPrice + 0.1;
+                }
+            }
+            
+            updateMarkersUI(selectedFuelForColor);
+            updatePriceLegendUI(selectedFuelForColor);
+        }
+
+        function updateMarkersUI(fuelCodeForColoring) {
+            Object.values(brandMarkerClusters).forEach(clusterGroup => {
+                clusterGroup.eachLayer(marker => {
+                    const stationData = marker.stationData;
+                    if (!stationData) return;
+                    const isCheapestP = cheapestPetrolStation && stationData.site_id === cheapestPetrolStation.site_id && stationData.sourceName === cheapestPetrolStation.sourceName;
+                    const isCheapestD = cheapestDieselStation && stationData.site_id === cheapestDieselStation.site_id && stationData.sourceName === cheapestDieselStation.sourceName;
+                    let iconColor = null;
+                    if (fuelCodeForColoring && fuelCodeForColoring !== 'none' && currentPriceScale.length > 0) {
+                        const price = getStationPrice(stationData, fuelCodeForColoring,
+                            fuelCodeForColoring === STANDARD_PETROL_CODE ? ALT_STANDARD_PETROL_CODES :
+                            (fuelCodeForColoring === STANDARD_DIESEL_CODE ? ALT_STANDARD_DIESEL_CODES : [])
+                        );
+                        if (price !== null) {
+                            for (const bin of currentPriceScale) {
+                                if (price <= bin.limit) { iconColor = bin.color; break; }
+                            }
+                            if (!iconColor && currentPriceScale.length > 0) iconColor = currentPriceScale[currentPriceScale.length -1].color;
+                        }
+                    }
+                    marker.setIcon(createFlagIcon(isCheapestP, isCheapestD, iconColor));
+                });
+            });
+        }
+        
+        function updatePriceLegendUI(selectedFuelCode) {
+            if (priceLegend) { map.removeControl(priceLegend); priceLegend = null; }
+            if (selectedFuelCode === 'none' || currentPriceScale.length === 0) return;
+
+            priceLegend = L.control({ position: 'bottomright' });
+            priceLegend.onAdd = function () {
+                const div = L.DomUtil.create('div', 'info legend');
+                const fuelDesc = FUEL_TYPE_DESCRIPTIONS[selectedFuelCode.toUpperCase().trim()] || selectedFuelCode;
+                div.innerHTML = `<h4>${fuelDesc} Price</h4>`;
+                
+                if (currentPriceScale.length === 1) { 
+                     div.innerHTML += `<i style="background:${currentPriceScale[0].color}"></i> ${currentPriceScale[0].limit.toFixed(1)}p<br>`;
+                } else {
+                     let lowerBoundForDisplay = Math.min(...allStationsData.map(s => getStationPrice(s, selectedFuelCode, [])).filter(p => p !== null && !isNaN(p)));
+                     if (!isFinite(lowerBoundForDisplay) && currentPriceScale.length > 0) { // Fallback if no prices at all
+                        lowerBoundForDisplay = currentPriceScale[0].limit - (currentPriceScale[1] ? currentPriceScale[1].limit - currentPriceScale[0].limit : 1); // Approximate
+                     }
+
+
+                    currentPriceScale.forEach((bin, index) => {
+                        const upperText = bin.limit > 10000 ? "+" : bin.limit.toFixed(1) + 'p';
+                        let rangeText;
+                        if (index === 0) {
+                            rangeText = `≤ ${bin.limit.toFixed(1)}p`;
+                        } else {
+                            rangeText = `${currentPriceScale[index-1].limit.toFixed(1)}p - ${upperText}`;
+                        }
+                        div.innerHTML += `<i style="background:${bin.color}"></i> ${rangeText}<br>`;
+                    });
+                }
+                return div;
+            };
+            priceLegend.addTo(map);
+        }
+
+        function updateCheapestFlagLegend() {
+            if (cheapestFlagLegend) { map.removeControl(cheapestFlagLegend); cheapestFlagLegend = null; }
+            if (cheapestPetrolStation || cheapestDieselStation) {
+                cheapestFlagLegend = L.control({position: 'bottomleft'});
+                cheapestFlagLegend.onAdd = function() {
+                    const div = L.DomUtil.create('div', 'info legend');
+                    div.innerHTML = '<h4>Cheapest Fuel</h4>';
+                    if (cheapestPetrolStation) div.innerHTML += '<span class="flag-icon flag-petrol">P</span> Cheapest Petrol<br>';
+                    if (cheapestDieselStation) div.innerHTML += '<span class="flag-icon flag-diesel">D</span> Cheapest Diesel<br>';
+                    return div;
+                };
+                cheapestFlagLegend.addTo(map);
+            }
+        }
+
+        fuelTypeColorSelect.addEventListener('change', updateDynamicPriceScaleAndLegend);
+        
+        function createFilterControls() {
+            if (!filterControlsElement || !map) return;
+            const filterTextSpan = filterControlsElement.querySelector('span');
+            while (filterControlsElement.children.length > 1) filterControlsElement.removeChild(filterControlsElement.lastChild);
+
+            const sortedBrandNames = Array.from(allBrandNames).sort((a, b) => {
+                if (a === "Unknown Brand") return 1; if (b === "Unknown Brand") return -1;
+                return a.localeCompare(b, undefined, {sensitivity: 'base'});
+            });
+
+            if (sortedBrandNames.length === 0 ) { if(filterTextSpan) filterTextSpan.style.display = 'none'; return; }
+            else { if(filterTextSpan) filterTextSpan.style.display = 'inline'; }
+
+            sortedBrandNames.forEach(brand => {
+                const safeBrandForId = brand.replace(/[^a-zA-Z0-9-]/g, '-');
+                const checkboxId = `filter-${safeBrandForId}`;
+                const label = document.createElement('label');
+                label.htmlFor = checkboxId;
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox'; checkbox.id = checkboxId; checkbox.value = brand; checkbox.checked = true;
+                checkbox.addEventListener('change', handleFilterChange);
+                label.appendChild(checkbox); label.appendChild(document.createTextNode(brand));
+                filterControlsElement.appendChild(label);
+            });
+        }
+
+        function handleFilterChange(event) {
+            if (!map) return;
+            const brand = event.target.value;
+            const isChecked = event.target.checked;
+            if (brandMarkerClusters[brand]) {
+                if (isChecked) { if(!map.hasLayer(brandMarkerClusters[brand])) map.addLayer(brandMarkerClusters[brand]); }
+                else { if(map.hasLayer(brandMarkerClusters[brand])) map.removeLayer(brandMarkerClusters[brand]); }
+            }
+            updateDynamicPriceScaleAndLegend(); 
+        }
+
+        function parseUkDate(dateString) {
+            if (!dateString) return null;
+            const parts = dateString.match(/(\d{2})\/(\d{2})\/(\d{4})\s*(\d{2}):(\d{2}):(\d{2})/);
+            if (!parts) {
+                const dateOnlyParts = dateString.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+                if (dateOnlyParts) return new Date(dateOnlyParts[3], dateOnlyParts[2] - 1, dateOnlyParts[1], 0, 0, 0);
+                console.warn("Could not parse date string:", dateString); return null;
+            }
+            return new Date(parts[3], parts[2] - 1, parts[1], parts[4], parts[5], parts[6]);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => { 
+            console.log("DOMContentLoaded: Event fired.");
+            initializeMap(UK_CENTER, INITIAL_UK_ZOOM); 
+        });
+    </script>
+</body>
+</html>
