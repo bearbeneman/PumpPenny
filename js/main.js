@@ -4,12 +4,16 @@
 import { UK_CENTER, INITIAL_UK_ZOOM, MAX_ZOOM } from './config.js';
 import { state } from './state.js';
 import { fetchAndProcessData } from './data.js';
-// MODIFIED: Import the new control creation function
 import { createFilterUI, createRecenterControl } from './ui.js';
 import { updateDynamicPriceScaleAndLegend } from './map-renderer.js';
 
 function initializeMap(center, zoom) {
-    const map = L.map('map', { zoomControl: false }).setView(center, zoom);
+    // MODIFIED: Add the attributionControl: false option here
+    const map = L.map('map', { 
+        zoomControl: false, 
+        attributionControl: false 
+    }).setView(center, zoom);
+    
     state.map = map;
 
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -19,7 +23,6 @@ function initializeMap(center, zoom) {
     }).addTo(map);
 
     createFilterUI();
-    // NEW: Create the recenter control
     createRecenterControl();
 
     map.on('moveend', updateDynamicPriceScaleAndLegend);
@@ -38,7 +41,6 @@ function initializeMap(center, zoom) {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const userLatLng = [position.coords.latitude, position.coords.longitude];
-                // MODIFIED: Store the user's location in the shared state
                 state.userLatLng = userLatLng;
                 map.setView(userLatLng, 12);
                 
