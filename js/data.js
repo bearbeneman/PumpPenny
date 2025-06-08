@@ -1,44 +1,48 @@
 // js/data.js
-// Handles fetching and processing of fuel data.
+// Handles fetching and processing of fuel data with a resilient, multi-proxy approach.
 
 import { DATA_SOURCES, parseLocation, STANDARD_PETROL_CODE, ALT_STANDARD_PETROL_CODES, STANDARD_DIESEL_CODE, ALT_STANDARD_DIESEL_CODES } from './config.js';
 import { state } from './state.js';
 import { addStationToCluster, createFilterControls, updateDynamicPriceScaleAndLegend } from './map-renderer.js';
 
-
-// NEW: List of reliable public CORS proxies
+// A list of public CORS proxies. The script will try them in order.
 const CORS_PROXIES = [
     'https://api.allorigins.win/raw?url=',
     'https://cors.eu.org/',
-    'https://proxy.cors.sh/'
 ];
 
-// NEW: Advanced fetch function with proxy fallback and retry logic
-async function fetchWithProxy(url) {
+/**
+ * A more robust fetch function that tries multiple proxies if the first one fails.
+ * @param {string} url The target URL to fetch.
+ * @returns {Promise<any>} A promise that resolves with the JSON data.
+ */
+async function fetchWithProxyFallbacks(url) {
     for (const proxy of CORS_PROXIES) {
         const proxiedUrl = proxy + encodeURIComponent(url);
         try {
-            const response = await fetch(proxiedUrl, {
-                headers: {
-                    // Some proxies require an origin header
-                    'x-requested-with': 'XMLHttpRequest'
-                }
-            });
+            const response = await fetch(proxiedUrl);
             if (response.ok) {
-                // If we get a good response, return it and stop trying other proxies
-                return response.json(); 
+                // Try to parse the response as JSON
+                const data = await response.json();
+                console.log(`Success with proxy ${proxy.substring(0, 20)}... for ${url}`);
+                return data; // If successful, return the data and exit the loop
             }
-            // If the response is not ok, we'll log it and the loop will try the next proxy
-            console.warn(`Proxy ${proxy} failed for ${url} with status ${response.status}`);
+            // If response is not ok (e.g., 404, 500), log it and try the next proxy
+            console.warn(`Proxy ${proxy.substring(0, 20)}... failed for ${url} with status ${response.status}`);
         } catch (error) {
-            // If a fetch fails completely (e.g., network error), log it and try the next proxy
-            console.warn(`Proxy ${proxy} encountered a network error for ${url}:`, error);
+            // If fetch fails completely (network error, or if response.json() fails), log it and try next proxy
+            console.warn(`Proxy ${proxy.substring(0, 20)}... encountered an error for ${url}:`, error.message);
         }
     }
-    // If all proxies fail, throw an error to be caught by the main loop
+    // If all proxies have been tried and failed, throw an error.
     throw new Error(`All proxies failed to fetch ${url}`);
 }
 
+/**
+ * A helper function to introduce a delay.
+ * @param {number} ms The delay in milliseconds.
+ */
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function fetchAndProcessData() {
     if (!state.map) { console.error("Map object is not available!"); return; }
@@ -51,11 +55,11 @@ export async function fetchAndProcessData() {
 
     let totalStationsAddedToMap = 0;
 
-    // MODIFIED: Use the new resilient fetch logic
+    // Fetch data sequentially with a delay to be polite to the APIs and proxies
     for (const source of DATA_SOURCES) {
         try {
-            // Use the new fetch function that tries multiple proxies
-            const data = await fetchWithProxy(source.url);
+            // Use the new resilient fetch function
+            const data = await fetchWithProxyFallbacks(source.url);
             
             const lastUpdated = data.last_updated;
 
@@ -68,10 +72,14 @@ export async function fetchAndProcessData() {
                     }
                 });
             }
-            console.log(`Successfully fetched data for ${source.name}.`);
+            console.log(`Successfully processed data for ${source.name}.`);
         } catch (error) {
-            console.error(`Ultimately failed to fetch data for ${source.name}:`, error);
+            // This logs only if ALL proxies failed for a given source
+            console.error(`Gave up on ${source.name} after trying all proxies. Error:`, error.message);
         }
+
+        // Add a small delay between each request to avoid rate-limiting
+        await delay(250);
     }
     
     console.log(`Processing complete. Found ${totalStationsAddedToMap} stations.`);
