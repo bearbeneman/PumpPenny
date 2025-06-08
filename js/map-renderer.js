@@ -6,66 +6,12 @@ import * as config from './config.js';
 import { getStationPrice } from './data.js';
 import { handleFilterChange } from './ui.js';
 
-function formatPriceAsPounds(priceInPence) {
-    if (priceInPence === null || isNaN(priceInPence)) {
-        return 'N/A';
-    }
-    const priceInPounds = priceInPence / 100;
-    return `£${priceInPounds.toFixed(3)}`;
-}
+function formatPriceAsPounds(priceInPence) { if (priceInPence === null || isNaN(priceInPence)) return 'N/A'; return `£${(priceInPence / 100).toFixed(3)}`; }
+function formatOnMapPrice(priceInPence) { if (priceInPence === null || isNaN(priceInPence)) return null; return `£${(priceInPence / 100).toFixed(2)}`; }
+function formatTooltipTime(dateString) { if (!dateString || typeof dateString !== 'string') return ''; const datePart = dateString.substring(0, 5); const timePart = dateString.substring(11, 16); if (!datePart || !timePart) return ''; return `${datePart} ${timePart}`; }
+function createFlagIcon(isCheapestPetrol, isCheapestDiesel, color = null, priceText = null) { let htmlContent = ''; const iconOptions = { iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], className: 'leaflet-div-icon' }; let flagHtml = ''; let priceLabelHtml = ''; if (isCheapestPetrol && isCheapestDiesel) { flagHtml = `<div class="icon-flag-diesel">Cheapest Diesel</div><div class="icon-flag-petrol">Cheapest Petrol</div>`; iconOptions.className += ' cheapest-both-icon'; } else if (isCheapestPetrol) { flagHtml = `<div class="icon-flag">Cheapest Petrol</div>`; iconOptions.className += ' cheapest-petrol-icon'; } else if (isCheapestDiesel) { flagHtml = `<div class="icon-flag">Cheapest Diesel</div>`; iconOptions.className += ' cheapest-diesel-icon'; } if (priceText) { priceLabelHtml = `<span class="marker-price-label">${priceText}</span>`; } if (color) { const markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 41" width="25" height="41"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.5 0C5.596 0 0 5.596 0 12.5C0 19.404 12.5 41 12.5 41S25 19.404 25 12.5C25 5.596 19.404 0 12.5 0z" fill="${color}" stroke="#555" stroke-width="0.5"></path></svg>`; htmlContent = `<div style="position:relative;">${markerSvg}${flagHtml}${priceLabelHtml}</div>`; iconOptions.className += ' price-colored-marker-icon'; } else { htmlContent = `<div style="position:relative;"><img src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png" />${flagHtml}${priceLabelHtml}</div>`; iconOptions.shadowUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'; iconOptions.shadowSize = [41, 41]; iconOptions.shadowAnchor = [12, 41]; } return L.divIcon({ html: htmlContent, ...iconOptions }); }
 
-function formatOnMapPrice(priceInPence) {
-    if (priceInPence === null || isNaN(priceInPence)) {
-        return null; // Return null so we don't show a label if no price
-    }
-    const priceInPounds = priceInPence / 100;
-    return `£${priceInPounds.toFixed(2)}`;
-}
-
-function formatTooltipTime(dateString) {
-    if (!dateString || typeof dateString !== 'string') return '';
-    const datePart = dateString.substring(0, 5);
-    const timePart = dateString.substring(11, 16);
-    if (!datePart || !timePart) return '';
-    return `${datePart} ${timePart}`;
-}
-
-function createFlagIcon(isCheapestPetrol, isCheapestDiesel, color = null, priceText = null) {
-    let htmlContent = '';
-    const iconOptions = {
-        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], className: 'leaflet-div-icon'
-    };
-    let flagHtml = '';
-    let priceLabelHtml = '';
-
-    if (isCheapestPetrol && isCheapestDiesel) {
-        flagHtml = `<div class="icon-flag-diesel">Cheapest Diesel</div><div class="icon-flag-petrol">Cheapest Petrol</div>`;
-        iconOptions.className += ' cheapest-both-icon';
-    } else if (isCheapestPetrol) {
-        flagHtml = `<div class="icon-flag">Cheapest Petrol</div>`; 
-        iconOptions.className += ' cheapest-petrol-icon';
-    } else if (isCheapestDiesel) {
-        flagHtml = `<div class="icon-flag">Cheapest Diesel</div>`; 
-        iconOptions.className += ' cheapest-diesel-icon';
-    }
-
-    if (priceText) {
-        priceLabelHtml = `<span class="marker-price-label">${priceText}</span>`;
-    }
-
-    if (color) {
-        const markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 41" width="25" height="41"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.5 0C5.596 0 0 5.596 0 12.5C0 19.404 12.5 41 12.5 41S25 19.404 25 12.5C25 5.596 19.404 0 12.5 0z" fill="${color}" stroke="#555" stroke-width="0.5"></path></svg>`;
-        htmlContent = `<div style="position:relative;">${markerSvg}${flagHtml}${priceLabelHtml}</div>`;
-        iconOptions.className += ' price-colored-marker-icon';
-    } else {
-        htmlContent = `<div style="position:relative;"><img src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png" />${flagHtml}${priceLabelHtml}</div>`;
-        iconOptions.shadowUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
-        iconOptions.shadowSize = [41, 41];
-        iconOptions.shadowAnchor = [12, 41];
-    }
-    return L.divIcon({ html: htmlContent, ...iconOptions });
-}
-
+// MODIFIED: This function now checks screen width before binding tooltips.
 export function addStationToCluster(stationData) {
     let brand = (stationData.brand || stationData.sourceName || "Unknown Brand").trim();
     if (brand === "") brand = "Unknown Brand";
@@ -83,8 +29,15 @@ export function addStationToCluster(stationData) {
     
     const popupContent = `<strong>${stationData.address || "N/A"}</strong><div class="brand-name">${brand} - ${stationData.postcode || "N/A"}</div><hr>${pricesHtml}<div class="popup-footer"><span class="popup-updated-time">Updated: ${stationData.lastUpdated || 'Unknown'}</span><a href="https://www.google.com/maps/dir/?api=1&destination=${stationData.lat},${stationData.lon}" target="_blank" class="navigate-link">Navigate</a></div>`;
     const marker = L.marker([stationData.lat, stationData.lon], { icon: createFlagIcon(false, false, null) });
-    marker.bindTooltip(`<strong>${brand}</strong>`);
+    
+    // Bind the popup for all devices
     marker.bindPopup(popupContent);
+
+    // NEW: Only bind the hover tooltip on non-mobile (wider) screens
+    if (window.innerWidth > 768) {
+        marker.bindTooltip(`<strong>${brand}</strong>`);
+    }
+
     marker.stationData = stationData;
 
     if (!state.brandMarkerClusters[brand]) {
@@ -94,6 +47,7 @@ export function addStationToCluster(stationData) {
 }
 
 export function updateDynamicPriceScaleAndLegend() {
+    // ... (This function is unchanged)
     if (!state.map || state.allStationsData.length === 0) return;
     const activeButton = document.querySelector('#fuel-type-buttons .active');
     const selectedFuelForColor = activeButton ? activeButton.dataset.value : 'none';
@@ -121,24 +75,14 @@ export function updateDynamicPriceScaleAndLegend() {
             });
         }
     });
-    
-    if (selectedFuelForColor !== 'none' && visiblePricesForScale.length > 0) {
-        const minPrice = Math.min(...visiblePricesForScale), maxPrice = Math.max(...visiblePricesForScale);
-        if (minPrice === maxPrice) {
-            state.currentPriceScale.push({ limit: minPrice, color: config.PRICE_BIN_COLORS[2] });
-        } else {
-            const step = (maxPrice - minPrice) / config.NUM_PRICE_BINS;
-            for (let i = 0; i < config.NUM_PRICE_BINS; i++) {
-                state.currentPriceScale.push({ limit: minPrice + step * (i + 1), color: config.PRICE_BIN_COLORS[i] });
-            }
-        }
-    }
+    if (selectedFuelForColor !== 'none' && visiblePricesForScale.length > 0) { const minPrice = Math.min(...visiblePricesForScale), maxPrice = Math.max(...visiblePricesForScale); if (minPrice === maxPrice) { state.currentPriceScale.push({ limit: minPrice, color: config.PRICE_BIN_COLORS[2] }); } else { const step = (maxPrice - minPrice) / config.NUM_PRICE_BINS; for (let i = 0; i < config.NUM_PRICE_BINS; i++) { state.currentPriceScale.push({ limit: minPrice + step * (i + 1), color: config.PRICE_BIN_COLORS[i] }); } } }
     updateMarkersUI(selectedFuelForColor, visibleMarkers);
     updatePriceLegendUI(selectedFuelForColor);
     updateHeaderSummary();
     updateCheapestStationsLegend();
 }
 
+// MODIFIED: This function now also checks screen width before updating tooltips.
 function updateMarkersUI(fuelCodeForColoring, visibleMarkers) {
     visibleMarkers.forEach(marker => {
         const stationData = marker.stationData;
@@ -162,20 +106,25 @@ function updateMarkersUI(fuelCodeForColoring, visibleMarkers) {
             }
         }
         
-        const unleadedPrice = getStationPrice(stationData, config.STANDARD_PETROL_CODE);
-        const unleadedPriceText = formatPriceAsPounds(unleadedPrice);
-        const dieselPrice = getStationPrice(stationData, config.STANDARD_DIESEL_CODE);
-        const dieselPriceText = formatPriceAsPounds(dieselPrice);
-        const updateTimeText = formatTooltipTime(stationData.lastUpdated);
+        // NEW: Only update tooltip content if the tooltip exists (i.e., on desktop)
+        if (marker.getTooltip()) {
+            const unleadedPrice = getStationPrice(stationData, config.STANDARD_PETROL_CODE);
+            const unleadedPriceText = formatPriceAsPounds(unleadedPrice);
+            const dieselPrice = getStationPrice(stationData, config.STANDARD_DIESEL_CODE);
+            const dieselPriceText = formatPriceAsPounds(dieselPrice);
+            const updateTimeText = formatTooltipTime(stationData.lastUpdated);
 
-        const tooltipContent = `<div class="tooltip-brand">${stationData.displayBrand}</div><table class="tooltip-table"><tr><td class="tooltip-label">Unleaded:</td><td class="tooltip-value">${unleadedPriceText}</td></tr><tr><td class="tooltip-label">Diesel:</td><td class="tooltip-value">${dieselPriceText}</td></tr><tr><td class="tooltip-label tooltip-updated">Updated:</td><td class="tooltip-value tooltip-updated">${updateTimeText || 'N/A'}</td></tr></table>`;
+            const tooltipContent = `<div class="tooltip-brand">${stationData.displayBrand}</div><table class="tooltip-table"><tr><td class="tooltip-label">Unleaded:</td><td class="tooltip-value">${unleadedPriceText}</td></tr><tr><td class="tooltip-label">Diesel:</td><td class="tooltip-value">${dieselPriceText}</td></tr><tr><td class="tooltip-label tooltip-updated">Updated:</td><td class="tooltip-value tooltip-updated">${updateTimeText || 'N/A'}</td></tr></table>`;
+            
+            marker.setTooltipContent(tooltipContent);
+        }
         
-        marker.setTooltipContent(tooltipContent);
         marker.setIcon(createFlagIcon(isCheapestP, isCheapestD, iconColor, onMapPriceText));
     });
 }
 
 function updatePriceLegendUI(selectedFuelCode) {
+    // ... (This function is unchanged)
     if (state.priceLegend) { state.map.removeControl(state.priceLegend); state.priceLegend = null; }
     if (selectedFuelCode === 'none' || state.currentPriceScale.length === 0) return;
     state.priceLegend = L.control({ position: 'bottomright' });
@@ -200,16 +149,14 @@ function updatePriceLegendUI(selectedFuelCode) {
 }
 
 function updateHeaderSummary() {
+    // ... (This function is unchanged)
     const summaryContainer = document.getElementById('header-summary');
     if (!summaryContainer) return;
-
     const activeButton = document.querySelector('#fuel-type-buttons .active');
     const selectedFuel = activeButton ? activeButton.dataset.value : 'none';
-        
     let minPrice, maxPrice;
     const petrolTypes = ['E10', 'E5'];
     const dieselTypes = ['B7', 'SDV'];
-
     if (petrolTypes.includes(selectedFuel)) {
         minPrice = state.visibleCheapestPetrolPrice;
         maxPrice = state.visibleHighestPetrolPrice;
@@ -220,26 +167,19 @@ function updateHeaderSummary() {
         summaryContainer.innerHTML = '';
         return;
     }
-
     const spread = maxPrice - minPrice;
     if (spread > 0 && isFinite(minPrice)) {
         const savings = (spread * 50) / 100;
-        summaryContainer.innerHTML = `
-            <div class="summary-savings">Save up to <strong>£${savings.toFixed(2)}</strong> on a 50L tank</div>
-            <div class="summary-spread-container">
-                <span>Visible Price Spread: </span>
-                <span class="summary-spread-value">${formatPriceAsPounds(spread)}</span>
-            </div>
-        `;
+        summaryContainer.innerHTML = `<div class="summary-savings">Save up to <strong>£${savings.toFixed(2)}</strong> on a 50L tank</div><div class="summary-spread-container"><span>Visible Price Spread: </span><span class="summary-spread-value">${formatPriceAsPounds(spread)}</span></div>`;
     } else {
-        summaryContainer.innerHTML = ''; // Clear summary if no spread
+        summaryContainer.innerHTML = '';
     }
 }
 
 function updateCheapestStationsLegend() {
+    // ... (This function is unchanged)
     if (state.cheapestFlagLegend) { state.map.removeControl(state.cheapestFlagLegend); state.cheapestFlagLegend = null; }
     if (!state.visibleCheapestPetrolStation && !state.visibleCheapestDieselStation) return;
-
     state.cheapestFlagLegend = L.control({position: 'bottomleft'});
     state.cheapestFlagLegend.onAdd = function() {
         const div = L.DomUtil.create('div', 'info legend');
@@ -252,26 +192,20 @@ function updateCheapestStationsLegend() {
 }
 
 export function createFilterControls() {
+    // ... (This function is unchanged)
     const brandsListContainer = document.getElementById('filter-brands-list');
     if (!brandsListContainer) return;
     brandsListContainer.innerHTML = '';
     const sortedBrandNames = Array.from(state.allBrandNames).sort((a, b) => a.localeCompare(b));
     if (sortedBrandNames.length === 0) { 
-        brandsListContainer.innerHTML = 'No brands found to filter.'; 
-        return; 
+        brandsListContainer.innerHTML = 'No brands found to filter.'; return; 
     }
     sortedBrandNames.forEach(brand => {
         const checkboxId = `filter-${brand.replace(/[^a-zA-Z0-9-]/g, '-')}`;
-        const label = document.createElement('label'); 
-        label.htmlFor = checkboxId;
-        const checkbox = document.createElement('input'); 
-        checkbox.type = 'checkbox'; 
-        checkbox.id = checkboxId; 
-        checkbox.value = brand; 
-        checkbox.checked = true;
+        const label = document.createElement('label'); label.htmlFor = checkboxId;
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.id = checkboxId; checkbox.value = brand; checkbox.checked = true;
         checkbox.addEventListener('change', handleFilterChange);
-        label.appendChild(checkbox); 
-        label.appendChild(document.createTextNode(brand));
+        label.appendChild(checkbox); label.appendChild(document.createTextNode(brand));
         brandsListContainer.appendChild(label);
     });
 }
